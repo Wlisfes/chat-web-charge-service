@@ -34,11 +34,11 @@ done
 
 # 部署前授权写回发送记录，并准备 Nacos 配置。已有配置只校验，不覆盖人工修改。
 script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-export CHARGE_MYSQL_PASSWORD_FILE="$script_dir/.hooks-mysql-password"
+export CHARGE_MYSQL_PASSWORD_FILE="$script_dir/.charge-mysql-password"
 sh "$script_dir/bootstrap-database.sh"
 CHARGE_MYSQL_PASSWORD=$(tr -d '\r\n' < "$CHARGE_MYSQL_PASSWORD_FILE")
 export CHARGE_MYSQL_PASSWORD
-export CHARGE_MYSQL_USERNAME=${CHARGE_MYSQL_USERNAME:-chat_web_hooks_service}
+export CHARGE_MYSQL_USERNAME=${CHARGE_MYSQL_USERNAME:-chat_web_charge_service}
 docker run --rm --network host --env-file .env \
     -e CHARGE_MYSQL_PASSWORD -e CHARGE_MYSQL_USERNAME \
     -v "$script_dir/bootstrap-nacos-config.cjs:/app/bootstrap-nacos-config.cjs:ro" \
