@@ -1,0 +1,33 @@
+name: chat-web-service
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "30"
+
+services:
+  charge-service:
+    image: ${IMAGE:?IMAGE is required}
+    container_name: chat-web-charge-service
+    restart: unless-stopped
+    logging: *default-logging
+    init: true
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 5120
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - '${HOST_BIND_IP:-127.0.0.1}:5120:5120'
+    expose:
+      - '5120'
+    networks:
+      - infrastructure
+    stop_grace_period: 20s
+
+networks:
+  infrastructure:
+    external: true
+    name: ${DOCKER_NETWORK:-chat-web-infrastructure}
