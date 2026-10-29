@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { InjectDataSource, DataSource } from '@wlisfes/chat-web-base-schema/database'
 import { RabbitmqService } from '@wlisfes/chat-web-base-schema/rabbitmq'
+import { RedisService } from '@wlisfes/chat-web-base-schema/redis'
 import * as HealthDto from '@/health/dto/health.dto'
 
 type TableRow = { tableName: string }
@@ -9,6 +10,7 @@ type TableRow = { tableName: string }
 export class HealthService {
     constructor(
         private readonly rabbitmqService: RabbitmqService,
+        private readonly redisService: RedisService,
         @InjectDataSource() private readonly dataSource: DataSource
     ) {}
 
@@ -16,17 +18,28 @@ export class HealthService {
         return { status: 'UP', timestamp: new Date().toISOString() }
     }
 
-    /** 回执要入队并写回发送记录，RabbitMQ 或数据库未就绪时不接收回执。 */
+    /** 扣费依赖 RabbitMQ、数据库和 Redis，任一未就绪时不接收扣费消息。 */
     public async getReadiness(): Promise<HealthDto.ServiceReadinessResponseDto> {
         const rabbitmqConnected = this.rabbitmqService.isReady()
         const database = await this.databaseStatus()
         const databaseReady = database.connected === true && (database.missingTables?.length ?? 0) === 0
+        const redis = await this.redisStatus()
         return {
-            status: rabbitmqConnected && databaseReady ? 'UP' : 'DOWN',
+            status: rabbitmqConnected && databaseReady && redis.connected ? 'UP' : 'DOWN',
             rabbitmq: { connected: rabbitmqConnected },
             database,
+            redis,
             auth: { mode: 'gateway-principal' },
             timestamp: new Date().toISOString()
+        }
+    }
+
+    /** 检查共享供应商钱包 Redis 是否可读写。 */
+    private async redisStatus(): Promise<HealthDto.ServiceDependencyResponseDto> {
+        try {
+            return { connected: await this.redisService.ping() }
+        } catch (error) {
+            return { connected: false, error: error instanceof Error ? error.message : String(error) }
         }
     }
 

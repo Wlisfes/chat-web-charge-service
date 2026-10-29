@@ -71,7 +71,9 @@ function topLevelBlock(content, name) {
 
 function createChargeConfig(source, environment = process.env) {
     const gateway = topLevelBlock(source, 'gateway')
+    const redis = topLevelBlock(source, 'redis')
     if (!gateway) throw new Error('来源 Nacos 配置缺少 gateway，无法生成 Charge 配置')
+    if (!redis) throw new Error('来源 Nacos 配置缺少 redis，无法生成 Charge 配置')
     const username = environment.CHARGE_MYSQL_USERNAME?.trim() || 'chat_web_charge_service'
     const password = required('CHARGE_MYSQL_PASSWORD', environment)
     return `# 服务监听配置。
@@ -81,7 +83,10 @@ server:
 # 服务间调用与网关身份上下文验签配置；从现有服务复制，必须与 Gateway 保持一致。
 ${gateway}
 
-# 读写 Finance 供应商账户和扣费流水。
+# 与 Finance 共用供应商钱包 Redis；database 必须固定为 3。
+${redis}
+
+# 读写 Finance 供应商钱包和扣费流水；余额由 Redis 维护。
 database:
   chat-web-finance:
     host: ${scalar(environment.CHARGE_MYSQL_HOST?.trim() || 'mysql')}
@@ -105,6 +110,9 @@ rabbitmq:
 
 function validateChargeConfig(content) {
     if (!/^\s+port:\s*5120\s*$/m.test(content)) throw new Error('Charge Nacos 配置缺少 server.port: 5120')
+    const redis = topLevelBlock(content, 'redis')
+    if (!redis) throw new Error('Charge Nacos 配置缺少 redis')
+    if (!/^\s{2}database:\s*3\s*$/m.test(redis)) throw new Error('Charge Redis database 必须为 3')
     if (!content.includes('chat-web-finance:')) throw new Error('Charge Nacos 配置缺少 database.chat-web-finance')
     if (!content.includes('/chat-sms')) throw new Error('Charge RabbitMQ vhost 必须为 /chat-sms')
     if (!content.includes('service_token:') || !content.includes('secret:')) throw new Error('Charge Nacos 配置缺少网关凭据')

@@ -44,6 +44,9 @@ export class ServiceReadinessResponseDto {
     @ApiProperty({ description: '数据库状态', type: ServiceDependencyResponseDto })
     database: ServiceDependencyResponseDto
 
+    @ApiProperty({ description: 'Redis 状态', type: ServiceDependencyResponseDto })
+    redis: ServiceDependencyResponseDto
+
     @ApiProperty({ description: '鉴权模式', type: ServiceAuthModeResponseDto })
     auth: ServiceAuthModeResponseDto
 }
