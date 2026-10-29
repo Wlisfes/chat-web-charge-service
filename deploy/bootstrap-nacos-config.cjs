@@ -108,6 +108,12 @@ rabbitmq:
 `
 }
 
+function appendRedisConfig(content, source) {
+    const redis = topLevelBlock(source, 'redis')
+    if (!redis) throw new Error('chat-web-finance-service.yaml 缺少 redis，无法补充 Charge Redis 配置')
+    return `${content.trimEnd()}\n\n# 与 Finance 共用供应商钱包 Redis；database 必须固定为 3。\n${redis}\n`
+}
+
 function validateChargeConfig(content) {
     if (!/^\s+port:\s*5120\s*$/m.test(content)) throw new Error('Charge Nacos 配置缺少 server.port: 5120')
     const redis = topLevelBlock(content, 'redis')
@@ -122,19 +128,24 @@ function validateChargeConfig(content) {
 async function ensureChargeConfig(environment = process.env) {
     const dataId = environment.NACOS_CONFIG_DATA_ID?.trim() || 'chat-web-charge-service.yaml'
     const existing = await readConfig(dataId, environment)
-    if (existing) {
+    if (existing && topLevelBlock(existing, 'redis')) {
         validateChargeConfig(existing)
         return false
     }
     const source = await readConfig('chat-web-finance-service.yaml', environment)
     if (!source) throw new Error('未找到 chat-web-finance-service.yaml，无法复制网关配置')
+    if (existing) {
+        // 已有配置只补充缺失的 Redis 节点，其他人工配置保持原样。
+        await writeConfig(dataId, validateChargeConfig(appendRedisConfig(existing, source)), environment)
+        return true
+    }
     await writeConfig(dataId, validateChargeConfig(createChargeConfig(source, environment)), environment)
     return true
 }
 
 async function main() {
     const created = await ensureChargeConfig()
-    process.stdout.write(created ? 'Charge Nacos 配置已创建\n' : 'Charge Nacos 配置已存在且校验通过\n')
+    process.stdout.write(created ? 'Charge Nacos 配置已创建或补充\n' : 'Charge Nacos 配置已存在且校验通过\n')
 }
 
 if (require.main === module) {
@@ -144,4 +155,4 @@ if (require.main === module) {
     })
 }
 
-module.exports = { createChargeConfig, validateChargeConfig }
+module.exports = { appendRedisConfig, createChargeConfig, validateChargeConfig }
