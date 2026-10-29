@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# Charge 读写 Finance 供应商账户和扣费流水。账号已存在时不改密码。
+# Charge 读取 Finance 供应商钱包并写入扣费流水；余额由 Redis 维护。账号已存在时不改密码。
 USERNAME=${CHARGE_MYSQL_USERNAME:-chat_web_charge_service}
 MYSQL_CONTAINER=${CHARGE_MYSQL_CONTAINER:-chat-web-mysql}
 RABBIT_CONTAINER=${CHARGE_RABBIT_CONTAINER:-chat-web-rabbitmq}
@@ -30,8 +30,8 @@ test -s "$PASSWORD_FILE" || { echo "缺少 Charge 数据库密码文件：$PASSW
 password=$(tr -d '\r\n' < "$PASSWORD_FILE")
 
 sql=$(cat <<SQL
-GRANT SELECT, INSERT, UPDATE ON \`chat-web-finance\`.\`tb_finance_srm_user\` TO '$USERNAME'@'%';
-GRANT SELECT, INSERT ON \`chat-web-finance\`.\`tb_finance_srm_user_bill\` TO '$USERNAME'@'%';
+GRANT SELECT ON \`chat-web-finance\`.\`tb_finance_srm_user_wallet\` TO '$USERNAME'@'%';
+GRANT SELECT, INSERT ON \`chat-web-finance\`.\`tb_finance_srm_user_deduct\` TO '$USERNAME'@'%';
 FLUSH PRIVILEGES;
 SQL
 )
@@ -43,4 +43,4 @@ else
     docker exec "$RABBIT_CONTAINER" rabbitmqctl change_password "$USERNAME" "$password"
 fi
 docker exec "$RABBIT_CONTAINER" rabbitmqctl set_permissions -p /chat-sms "$USERNAME" ".*" ".*" ".*"
-echo "Charge 已授权供应商账户和扣费流水，并准备 RabbitMQ 账号"
+echo "Charge 已授权供应商钱包和扣费流水，并准备 RabbitMQ 账号"
