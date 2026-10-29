@@ -1,6 +1,6 @@
 {
     "name": "chat-web-charge-service",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "description": "Chat Web Charge 扣费服务",
     "author": "Wlisfes",
     "private": true,
