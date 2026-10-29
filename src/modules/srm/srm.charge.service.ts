@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
+import { RedisService } from '@wlisfes/chat-web-base-schema/redis'
 import { DataSource, InjectDataSource } from '@wlisfes/chat-web-base-schema/database'
+import { SRM_WALLET_BALANCE_FIELD, srmWalletRedisKey } from '@/modules/srm/srm.charge.constants'
 import { type SrmUserBillingPayload } from '@wlisfes/chat-web-base-schema/rabbitmq'
 import * as Schema from '@wlisfes/chat-web-base-schema'
 
@@ -8,81 +10,104 @@ export type ChargeApplyResult = 'applied' | 'duplicate' | 'invalid'
 export interface ChargeCanSendResult {
     allowed: boolean
     payMode: 'prepaid' | 'postpaid'
-    balanceUsd: number
+    /** 钱包本币余额（放大百万倍存储）。 */
+    balance: number
     reason?: string
 }
 
 /**
  * R 端供应商扣费。
- * 收到发送成功或已送达回执后扣一次；先付余额小于等于 0 不允许再发，后付可以扣成负数。
+ * 收到设备提交或发送成功回执后扣一次；扣费金额已是钱包本币，不做 USD 转换，余额只在 Redis 原子扣减。
+ * 先付余额小于等于 0 不允许再发，后付可以扣成负数。
  */
 @Injectable()
 export class SrmChargeService {
     private readonly logger = new Logger(SrmChargeService.name)
 
-    constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+    constructor(
+        @InjectDataSource() private readonly dataSource: DataSource,
+        private readonly redisService: RedisService
+    ) {}
 
+    /** 发送前从 Redis 读取钱包最新余额，预付余额不足时拒绝。 */
     public async canSend(userKeyId: number, payMode: string): Promise<ChargeCanSendResult> {
         const mode = payMode === 'prepaid' ? 'prepaid' : 'postpaid'
-        const account = await this.dataSource.getRepository(Schema.TbFinanceSrmUser).findOne({
-            where: { userKeyId },
-            select: { balanceUsd: true, payMode: true }
-        })
-        const balanceUsd = account?.balanceUsd ?? 0
-        if (mode === 'prepaid' && balanceUsd <= 0) {
-            return { allowed: false, payMode: mode, balanceUsd, reason: '预付余额不足' }
+        const balance = await this.findRedisBalance(userKeyId)
+        if (mode === 'prepaid' && balance <= 0) {
+            return { allowed: false, payMode: mode, balance, reason: '预付余额不足' }
         }
-        return { allowed: true, payMode: mode, balanceUsd }
+        return { allowed: true, payMode: mode, balance }
     }
 
+    /** 幂等写入扣费流水，并从 Redis 原子扣减钱包余额。 */
     public async apply(billing: Partial<SrmUserBillingPayload> | undefined): Promise<ChargeApplyResult> {
         const event = this.normalize(billing)
         if (!event) return 'invalid'
-        return this.dataSource.transaction(async manager => {
-            const exists = await manager.getRepository(Schema.TbFinanceSrmUserBill).exists({
-                where: [{ eventId: event.eventId }, { msgId: event.msgId }]
-            })
-            if (exists) return 'duplicate'
-            await manager
-                .createQueryBuilder()
-                .insert()
-                .into(Schema.TbFinanceSrmUser)
-                .values({ userKeyId: event.userKeyId, payMode: event.payMode, balanceUsd: 0, billedUsd: 0, billCount: 0 })
-                .orIgnore()
-                .updateEntity(false)
-                .execute()
-            await manager
-                .createQueryBuilder()
-                .update(Schema.TbFinanceSrmUser)
-                .set({
-                    balanceUsd: () => `${Schema.TbFinanceSrmUserColumn.BALANCE_USD} - ${event.costUsd}`,
-                    billedUsd: () => `${Schema.TbFinanceSrmUserColumn.BILLED_USD} + ${event.costUsd}`,
-                    billCount: () => `${Schema.TbFinanceSrmUserColumn.BILL_COUNT} + 1`,
-                    payMode: event.payMode
+        let deducted = false
+        try {
+            return await this.dataSource.transaction(async manager => {
+                const deductRepository = manager.getRepository(Schema.TbFinanceSrmUserDeduct)
+                const exists = await deductRepository.exists({ where: { eventId: event.eventId } })
+                if (exists) return 'duplicate'
+                const wallet = await manager.getRepository(Schema.TbFinanceSrmUserWallet).findOne({
+                    where: { userKeyId: event.userKeyId },
+                    select: { currency: true }
                 })
-                .where('userKeyId = :userKeyId', { userKeyId: event.userKeyId })
-                .execute()
-            const account = await manager
-                .getRepository(Schema.TbFinanceSrmUser)
-                .findOneOrFail({ where: { userKeyId: event.userKeyId }, select: { balanceUsd: true } })
-            await manager.getRepository(Schema.TbFinanceSrmUserBill).insert({
-                eventId: event.eventId,
-                msgId: event.msgId,
-                userKeyId: event.userKeyId,
-                simbankKeyId: event.simbankKeyId,
-                portKeyId: event.portKeyId,
-                payMode: event.payMode,
-                trigger: event.trigger,
-                segments: event.segments,
-                costUsd: event.costUsd,
-                balanceUsd: account.balanceUsd,
-                occurredTime: event.occurredTime
+                if (!wallet) throw new Error(`供应商钱包不存在：userKeyId=${event.userKeyId}`)
+                await this.findRedisBalance(event.userKeyId)
+                const balance = await this.redisService.hIncrBy(srmWalletRedisKey(event.userKeyId), SRM_WALLET_BALANCE_FIELD, -event.amount)
+                deducted = true
+                try {
+                    await deductRepository.insert({
+                        eventId: event.eventId,
+                        userKeyId: event.userKeyId,
+                        currency: wallet.currency,
+                        bizType: Schema.TbFinanceSrmUserDeductBizType.SMS,
+                        amount: event.amount,
+                        businessId: event.msgId,
+                        occurredTime: event.occurredTime
+                    })
+                } catch (error) {
+                    await this.restoreRedisBalance(event.userKeyId, event.amount)
+                    deducted = false
+                    const duplicatedAfterRace = await deductRepository.exists({ where: { eventId: event.eventId } })
+                    if (duplicatedAfterRace) return 'duplicate'
+                    throw error
+                }
+                this.logger.log(
+                    `供应商已扣费：eventId=${event.eventId}，msgId=${event.msgId}，userKeyId=${event.userKeyId}，amount=${event.amount}，balance=${balance}`
+                )
+                return 'applied'
             })
-            this.logger.log(
-                `供应商已扣费：msgId=${event.msgId}，userKeyId=${event.userKeyId}，payMode=${event.payMode}，costUsd=${event.costUsd}，balanceUsd=${account.balanceUsd}`
+        } catch (error) {
+            if (deducted) await this.restoreRedisBalance(event.userKeyId, event.amount)
+            throw error
+        }
+    }
+
+    /** 读取 Redis 中的最新钱包余额；字段缺失或格式错误时拒绝继续扣费。 */
+    private async findRedisBalance(userKeyId: number): Promise<number> {
+        const snapshot = await this.redisService.hGetAll(srmWalletRedisKey(userKeyId))
+        const raw = snapshot[SRM_WALLET_BALANCE_FIELD]
+        if (typeof raw !== 'string' || !/^-?\d+$/.test(raw)) {
+            throw new Error(`供应商钱包${userKeyId}的 Redis 余额缺失或格式错误`)
+        }
+        const balance = Number(raw)
+        if (!Number.isSafeInteger(balance)) {
+            throw new Error(`供应商钱包${userKeyId}的 Redis 余额超出安全整数范围`)
+        }
+        return balance
+    }
+
+    /** 扣费流水写入失败时，通过 HINCRBY 反向补回已经扣掉的余额。 */
+    private async restoreRedisBalance(userKeyId: number, amount: number): Promise<void> {
+        try {
+            await this.redisService.hIncrBy(srmWalletRedisKey(userKeyId), SRM_WALLET_BALANCE_FIELD, amount)
+        } catch (error) {
+            this.logger.error(
+                `供应商 Redis 余额回补失败：userKeyId=${userKeyId}，amount=${amount}，原因=${error instanceof Error ? error.message : String(error)}`
             )
-            return 'applied'
-        })
+        }
     }
 
     private normalize(billing: Partial<SrmUserBillingPayload> | undefined) {
@@ -96,15 +121,16 @@ export class SrmChargeService {
         const userKeyId = positive(billing?.userKeyId)
         const payMode =
             billing?.payMode === 'prepaid'
-                ? Schema.TbFinanceSrmUserPayMode.PREPAID
+                ? Schema.TbFinanceSrmUserWalletPayMode.PREPAID
                 : billing?.payMode === 'postpaid'
-                  ? Schema.TbFinanceSrmUserPayMode.POSTPAID
+                  ? Schema.TbFinanceSrmUserWalletPayMode.POSTPAID
                   : undefined
-        const trigger = String(billing?.trigger || '')
-        const chargeable = trigger === 'success' || trigger === 'delivered'
-        const costUsd = Number(billing?.costUsd)
+        const trigger = text(billing?.trigger)
+        const chargeable = trigger === 'submitted' || trigger === 'success'
+        // 消息字段沿用 costUsd，值已是钱包本币金额（放大百万倍），这里不做汇率转换。
+        const amount = Number(billing?.costUsd)
         const occurredTime = new Date(text(billing?.occurredTime))
-        if (!eventId || !msgId || !userKeyId || !payMode || !chargeable || !Number.isSafeInteger(costUsd) || costUsd < 0) {
+        if (!eventId || !msgId || !userKeyId || !payMode || !chargeable || !Number.isSafeInteger(amount) || amount < 0) {
             this.logger.warn(`扣费事件不完整，不扣费：${JSON.stringify(billing)}`)
             return undefined
         }
@@ -112,12 +138,9 @@ export class SrmChargeService {
             eventId,
             msgId,
             userKeyId,
-            simbankKeyId: positive(billing?.simbankKeyId),
-            portKeyId: positive(billing?.portKeyId),
             payMode,
-            trigger: Schema.TbFinanceSrmUserBillTrigger.SUCCESS,
-            segments: positive(billing?.segments) || 1,
-            costUsd,
+            trigger,
+            amount,
             occurredTime: Number.isNaN(occurredTime.getTime()) ? new Date() : occurredTime
         }
     }

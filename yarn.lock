@@ -459,6 +459,33 @@
   resolved "https://registry.npmmirror.com/@pkgjs/parseargs/-/parseargs-0.11.0.tgz#a77ea742fab25775145434eb1d2328cf5013ac33"
   integrity sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==
 
+"@redis/bloom@6.2.1":
+  version "6.2.1"
+  resolved "https://registry.npmmirror.com/@redis/bloom/-/bloom-6.2.1.tgz#9aaffd5f51595fc4ff5bcd62ce9a31da82ce5cf4"
+  integrity sha512-huQgNLaCIZfQ9SeLn4q9124uOUd8HbZDYHwwUzNcRgHqCHiHKl2dDxMqJCeWh8cMqZAoWuHR8XnWbDMIf+o7ag==
+
+"@redis/client@6.2.1":
+  version "6.2.1"
+  resolved "https://registry.npmmirror.com/@redis/client/-/client-6.2.1.tgz#202d6c6bc88f1ed791fc50604d6d792ddf75438b"
+  integrity sha512-LzxBY7SIBvvJiyCgcaJZZakE3fJrZZ++i24+EDW9fKpCl68D35uJcKFpZZwCfOoG9WZTbyZlMzMeM0gtOAMU9Q==
+  dependencies:
+    cluster-key-slot "1.1.2"
+
+"@redis/json@6.2.1":
+  version "6.2.1"
+  resolved "https://registry.npmmirror.com/@redis/json/-/json-6.2.1.tgz#1861fe4b3522b845fd29094f40e0bbb5907bcb00"
+  integrity sha512-AFIUJ8Gj0DaaSBHYuSt8+O0oYWM+50OK1c0OmodB7XERIA8+BbyV3O4v76f9iccWasd1/7qjfZTpuzexUaZtrQ==
+
+"@redis/search@6.2.1":
+  version "6.2.1"
+  resolved "https://registry.npmmirror.com/@redis/search/-/search-6.2.1.tgz#0c83c6611dc387fde102828bd200cd5d459f4be9"
+  integrity sha512-2vfOAOyYFE7UUw3sBBlkqqruBtOUS4HRY5MtW4hp83llrwvtrTE4r22CEqXddlV+54zkLxBE4nmsIJ/dpezQrQ==
+
+"@redis/time-series@6.2.1":
+  version "6.2.1"
+  resolved "https://registry.npmmirror.com/@redis/time-series/-/time-series-6.2.1.tgz#0e3d9ae4563714491e7a6516165f037833f3cd36"
+  integrity sha512-kiYniph04dJOole+L359B6C9E+jYS2uDP7hca6Onj0xF38ZIpyxARO0Iq0W4ZRn1e8Q6vqW00QFZVSMRA/2Ijw==
+
 "@scarf/scarf@=1.4.0":
   version "1.4.0"
   resolved "https://registry.npmmirror.com/@scarf/scarf/-/scarf-1.4.0.tgz#3bbb984085dbd6d982494538b523be1ce6562972"
@@ -737,10 +764,10 @@
     "@webassemblyjs/ast" "1.14.1"
     "@xtuc/long" "4.2.2"
 
-"@wlisfes/chat-web-base-schema@1.7.18":
-  version "1.7.18"
-  resolved "https://npm.pkg.github.com/download/@wlisfes/chat-web-base-schema/1.7.18/712007df238aedb1da9f8087116f3c13c22df7b1#712007df238aedb1da9f8087116f3c13c22df7b1"
-  integrity sha512-i6Va9S0LJZuKCeF8qJdwbUMEkvvPbF6+Ns+miXqBmlN+UorKueCjEboi8m+CRnKuEuMkpEylVqQ3B3dG/OeNsA==
+"@wlisfes/chat-web-base-schema@1.7.20":
+  version "1.7.20"
+  resolved "https://npm.pkg.github.com/download/@wlisfes/chat-web-base-schema/1.7.20/7d5b0559902e672760da5306d5a08c3a59f25946#7d5b0559902e672760da5306d5a08c3a59f25946"
+  integrity sha512-P8ZHch/j9mN3+sHQD4XgrOwSqv9e5JxPCx3LQ/2us73Lge9lExeZhKzNV0oQ0Rsz3sQQ/BW/tNXlG7j/U+r+5Q==
   dependencies:
     "@opentelemetry/api" "^1.9.0"
     "@types/lodash" "^4.17.25"
@@ -1230,6 +1257,11 @@ cluster-client@^2.1.1:
     serialize-json "^1.0.3"
     tcp-base "^3.1.0"
     utility "^1.15.0"
+
+cluster-key-slot@1.1.2:
+  version "1.1.2"
+  resolved "https://registry.npmmirror.com/cluster-key-slot/-/cluster-key-slot-1.1.2.tgz#88ddaa46906e303b5de30d3153b7d9fe0a0c19ac"
+  integrity sha512-RMr0FhtfXemyinomL4hrWcYJxmX6deFdCxpJzhDttxgO1+bcCnkk+9drydLVDmAMG7NE6aN/fl4F7ucU/90gAA==
 
 co-gather@^1.0.0:
   version "1.0.1"
@@ -2753,6 +2785,17 @@ readdirp@^4.0.1:
   version "4.1.2"
   resolved "https://registry.npmmirror.com/readdirp/-/readdirp-4.1.2.tgz#eb85801435fbf2a7ee58f19e0921b068fc69948d"
   integrity sha512-GDhwkLfywWL2s6vEjyhri+eXmfH6j1L7JE27WhqLeYzoh/A3DBaYGEj2H/HFZCn/kMfim73FXxEJTw06WtxQwg==
+
+redis@6.2.1:
+  version "6.2.1"
+  resolved "https://registry.npmmirror.com/redis/-/redis-6.2.1.tgz#8f5f2aff8e59b57d169a6a03416cc90a1f0a9a5c"
+  integrity sha512-Z9VHtgYs48PiQC77X9O2Er8Hj4T+5BtFjT91/vi5Is1D04N72cA946ZslM1ImJw8ZctFBZWAVjM7S5wJNeHMpg==
+  dependencies:
+    "@redis/bloom" "6.2.1"
+    "@redis/client" "6.2.1"
+    "@redis/json" "6.2.1"
+    "@redis/search" "6.2.1"
+    "@redis/time-series" "6.2.1"
 
 reflect-metadata@0.2.2, reflect-metadata@^0.2.2:
   version "0.2.2"

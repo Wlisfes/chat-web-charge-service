@@ -5,18 +5,21 @@ import { AuthorizationGuard, AuthorizationModule, GatewayPrincipalGuard, Gateway
 import { HttpResponseModule } from '@wlisfes/chat-web-base-schema/interceptor'
 import { forRootNacosRuntimeOptions, NacosModule } from '@wlisfes/chat-web-base-schema/nacos'
 import { RabbitmqModule, setupSrmUserBillingTopology } from '@wlisfes/chat-web-base-schema/rabbitmq'
+import { RedisModule } from '@wlisfes/chat-web-base-schema/redis'
 import { AppController } from '@/app.controller'
 import { AppService } from '@/app.service'
 import { DatabaseModule } from '@/database/database.module'
 import { HealthModule } from '@/health/health.module'
 import { CHARGE_RABBITMQ_VHOST } from '@/database/database.constants'
 import { SrmChargeModule } from '@/modules/srm/srm.charge.module'
+import { CHARGE_REDIS_DATABASE } from '@/modules/srm/srm.charge.constants'
 
 @Module({
     imports: [
         HttpResponseModule,
         ConfigModule.forRoot({ isGlobal: true }),
         NacosModule.forRoot(forRootNacosRuntimeOptions(process.env)),
+        RedisModule.forRoot({ database: CHARGE_REDIS_DATABASE }),
         RabbitmqModule.forRoot({ vhost: CHARGE_RABBITMQ_VHOST, setup: setupSrmUserBillingTopology }),
         DatabaseModule,
         GatewayPrincipalModule,
