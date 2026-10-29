@@ -7,18 +7,10 @@ import * as Schema from '@wlisfes/chat-web-base-schema'
 
 export type ChargeApplyResult = 'applied' | 'duplicate' | 'invalid'
 
-export interface ChargeCanSendResult {
-    allowed: boolean
-    payMode: 'prepaid' | 'postpaid'
-    /** 钱包本币余额（放大百万倍存储）。 */
-    balance: number
-    reason?: string
-}
-
 /**
  * R 端供应商扣费。
  * 收到设备提交或发送成功回执后扣一次；扣费金额已是钱包本币，不做 USD 转换，余额只在 Redis 原子扣减。
- * 先付余额小于等于 0 不允许再发，后付可以扣成负数。
+ * 后付可以扣成负数；发送前余额校验由 Dispatch 直接读取 Redis 完成。
  */
 @Injectable()
 export class SrmChargeService {
@@ -28,16 +20,6 @@ export class SrmChargeService {
         @InjectDataSource() private readonly dataSource: DataSource,
         private readonly redisService: RedisService
     ) {}
-
-    /** 发送前从 Redis 读取钱包最新余额，预付余额不足时拒绝。 */
-    public async canSend(userKeyId: number, payMode: string): Promise<ChargeCanSendResult> {
-        const mode = payMode === 'prepaid' ? 'prepaid' : 'postpaid'
-        const balance = await this.findRedisBalance(userKeyId)
-        if (mode === 'prepaid' && balance <= 0) {
-            return { allowed: false, payMode: mode, balance, reason: '预付余额不足' }
-        }
-        return { allowed: true, payMode: mode, balance }
-    }
 
     /** 幂等写入扣费流水，并从 Redis 原子扣减钱包余额。 */
     public async apply(billing: Partial<SrmUserBillingPayload> | undefined): Promise<ChargeApplyResult> {

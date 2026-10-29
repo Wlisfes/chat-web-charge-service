@@ -60,18 +60,6 @@ function billing(overrides = {}) {
     }
 }
 
-test('发送前余额从 Redis 读取，预付小于等于 0 不能发，后付可以发', async () => {
-    const empty = fake()
-    const emptyRedis = redis(0)
-    const emptyService = new SrmChargeService(empty.dataSource, emptyRedis)
-    assert.equal((await emptyService.canSend(1, 'prepaid')).allowed, false)
-    assert.equal((await emptyService.canSend(1, 'postpaid')).allowed, true)
-
-    const funded = fake()
-    const fundedService = new SrmChargeService(funded.dataSource, redis(100))
-    assert.equal((await fundedService.canSend(1, 'prepaid')).allowed, true)
-})
-
 test('提交和发送成功事件扣 Redis 余额，并写入扣费流水', async () => {
     const box = fake()
     const cache = redis(100)

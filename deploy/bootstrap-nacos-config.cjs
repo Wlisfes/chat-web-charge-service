@@ -115,7 +115,9 @@ function appendRedisConfig(content, source) {
 }
 
 function validateChargeConfig(content) {
-    if (!/^\s+port:\s*5120\s*$/m.test(content)) throw new Error('Charge Nacos 配置缺少 server.port: 5120')
+    // 端口不固定：生产 5120、本地开发 5122 等都允许，只要求是有效端口号。
+    const port = Number((topLevelBlock(content, 'server') ?? '').match(/^\s{2}port:\s*(\d+)\s*$/m)?.[1])
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Charge Nacos 配置 server.port 必须是 1-65535 之间的整数')
     const redis = topLevelBlock(content, 'redis')
     if (!redis) throw new Error('Charge Nacos 配置缺少 redis')
     if (!/^\s{2}database:\s*3\s*$/m.test(redis)) throw new Error('Charge Redis database 必须为 3')
