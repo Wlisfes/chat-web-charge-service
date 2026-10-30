@@ -37,7 +37,11 @@ export class SrmChargeService {
                 })
                 if (!wallet) throw new Error(`供应商钱包不存在：userKeyId=${event.userKeyId}`)
                 await this.findRedisBalance(event.userKeyId)
-                const balance = await this.redisService.hIncrBy(SRM_WALLET_BALANCE_KEY, srmWalletBalanceField(event.userKeyId), -event.amount)
+                const balance = await this.redisService.hIncrBy(
+                    SRM_WALLET_BALANCE_KEY,
+                    srmWalletBalanceField(event.userKeyId),
+                    -event.amount
+                )
                 deducted = true
                 try {
                     await deductRepository.insert({
