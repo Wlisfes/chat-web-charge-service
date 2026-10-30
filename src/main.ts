@@ -15,7 +15,7 @@ async function bootstrap() {
     app.use(createRequestLoggingMiddleware(process.env.NACOS_SERVICE_NAME))
     return await setupSwagger(app, {
         title: 'Chat Web Charge 服务 API',
-        description: '扣费服务：R 端供应商扣费与发送前余额检查',
+        description: '扣费服务：R 端供应商扣费',
         port: process.env.PORT,
         NODE_ENV: process.env.NODE_ENV ?? 'development'
     })

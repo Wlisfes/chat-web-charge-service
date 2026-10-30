@@ -9,13 +9,13 @@ function redis(balance = 100) {
     return {
         state,
         increments,
-        async hGetAll() {
-            return { ...state }
+        async hGet() {
+            return state.balance
         },
         async hIncrBy(key, field, increment) {
             increments.push({ key, field, increment })
-            state[field] = String(Number(state[field] ?? 0) + increment)
-            return Number(state[field])
+            state.balance = String(Number(state.balance) + increment)
+            return Number(state.balance)
         }
     }
 }
@@ -60,25 +60,13 @@ function billing(overrides = {}) {
     }
 }
 
-test('发送前余额从 Redis 读取，预付小于等于 0 不能发，后付可以发', async () => {
-    const empty = fake()
-    const emptyRedis = redis(0)
-    const emptyService = new SrmChargeService(empty.dataSource, emptyRedis)
-    assert.equal((await emptyService.canSend(1, 'prepaid')).allowed, false)
-    assert.equal((await emptyService.canSend(1, 'postpaid')).allowed, true)
-
-    const funded = fake()
-    const fundedService = new SrmChargeService(funded.dataSource, redis(100))
-    assert.equal((await fundedService.canSend(1, 'prepaid')).allowed, true)
-})
-
 test('提交和发送成功事件扣 Redis 余额，并写入扣费流水', async () => {
     const box = fake()
     const cache = redis(100)
     const service = new SrmChargeService(box.dataSource, cache)
     assert.equal(await service.apply(billing()), 'applied')
     assert.equal(cache.state.balance, '90')
-    assert.deepEqual(cache.increments, [{ key: 'chat-web-finance:srm:wallet:1', field: 'balance', increment: -10 }])
+    assert.deepEqual(cache.increments, [{ key: 'chat-web-finance:srm:balances', field: '1', increment: -10 }])
     assert.equal(box.deducts.length, 1)
     assert.equal(box.deducts[0].eventId, 'm1:submitted')
     assert.equal(box.deducts[0].currency, 'USD')

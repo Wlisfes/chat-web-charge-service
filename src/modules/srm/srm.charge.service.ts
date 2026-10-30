@@ -1,24 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { RedisService } from '@wlisfes/chat-web-base-schema/redis'
 import { DataSource, InjectDataSource } from '@wlisfes/chat-web-base-schema/database'
-import { SRM_WALLET_BALANCE_FIELD, srmWalletRedisKey } from '@/modules/srm/srm.charge.constants'
+import { SRM_WALLET_BALANCE_KEY, srmWalletBalanceField } from '@/modules/srm/srm.charge.constants'
 import { type SrmUserBillingPayload } from '@wlisfes/chat-web-base-schema/rabbitmq'
 import * as Schema from '@wlisfes/chat-web-base-schema'
 
 export type ChargeApplyResult = 'applied' | 'duplicate' | 'invalid'
 
-export interface ChargeCanSendResult {
-    allowed: boolean
-    payMode: 'prepaid' | 'postpaid'
-    /** 钱包本币余额（放大百万倍存储）。 */
-    balance: number
-    reason?: string
-}
-
 /**
  * R 端供应商扣费。
  * 收到设备提交或发送成功回执后扣一次；扣费金额已是钱包本币，不做 USD 转换，余额只在 Redis 原子扣减。
- * 先付余额小于等于 0 不允许再发，后付可以扣成负数。
+ * 后付可以扣成负数；发送前余额校验由 Dispatch 直接读取 Redis 完成。
  */
 @Injectable()
 export class SrmChargeService {
@@ -28,16 +20,6 @@ export class SrmChargeService {
         @InjectDataSource() private readonly dataSource: DataSource,
         private readonly redisService: RedisService
     ) {}
-
-    /** 发送前从 Redis 读取钱包最新余额，预付余额不足时拒绝。 */
-    public async canSend(userKeyId: number, payMode: string): Promise<ChargeCanSendResult> {
-        const mode = payMode === 'prepaid' ? 'prepaid' : 'postpaid'
-        const balance = await this.findRedisBalance(userKeyId)
-        if (mode === 'prepaid' && balance <= 0) {
-            return { allowed: false, payMode: mode, balance, reason: '预付余额不足' }
-        }
-        return { allowed: true, payMode: mode, balance }
-    }
 
     /** 幂等写入扣费流水，并从 Redis 原子扣减钱包余额。 */
     public async apply(billing: Partial<SrmUserBillingPayload> | undefined): Promise<ChargeApplyResult> {
@@ -55,7 +37,7 @@ export class SrmChargeService {
                 })
                 if (!wallet) throw new Error(`供应商钱包不存在：userKeyId=${event.userKeyId}`)
                 await this.findRedisBalance(event.userKeyId)
-                const balance = await this.redisService.hIncrBy(srmWalletRedisKey(event.userKeyId), SRM_WALLET_BALANCE_FIELD, -event.amount)
+                const balance = await this.redisService.hIncrBy(SRM_WALLET_BALANCE_KEY, srmWalletBalanceField(event.userKeyId), -event.amount)
                 deducted = true
                 try {
                     await deductRepository.insert({
@@ -87,8 +69,7 @@ export class SrmChargeService {
 
     /** 读取 Redis 中的最新钱包余额；字段缺失或格式错误时拒绝继续扣费。 */
     private async findRedisBalance(userKeyId: number): Promise<number> {
-        const snapshot = await this.redisService.hGetAll(srmWalletRedisKey(userKeyId))
-        const raw = snapshot[SRM_WALLET_BALANCE_FIELD]
+        const raw = await this.redisService.hGet(SRM_WALLET_BALANCE_KEY, srmWalletBalanceField(userKeyId))
         if (typeof raw !== 'string' || !/^-?\d+$/.test(raw)) {
             throw new Error(`供应商钱包${userKeyId}的 Redis 余额缺失或格式错误`)
         }
@@ -102,7 +83,7 @@ export class SrmChargeService {
     /** 扣费流水写入失败时，通过 HINCRBY 反向补回已经扣掉的余额。 */
     private async restoreRedisBalance(userKeyId: number, amount: number): Promise<void> {
         try {
-            await this.redisService.hIncrBy(srmWalletRedisKey(userKeyId), SRM_WALLET_BALANCE_FIELD, amount)
+            await this.redisService.hIncrBy(SRM_WALLET_BALANCE_KEY, srmWalletBalanceField(userKeyId), amount)
         } catch (error) {
             this.logger.error(
                 `供应商 Redis 余额回补失败：userKeyId=${userKeyId}，amount=${amount}，原因=${error instanceof Error ? error.message : String(error)}`
