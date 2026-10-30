@@ -6,9 +6,11 @@ const { SrmChargeService } = require('../dist/modules/srm/srm.charge.service')
 function redis(balance = 100) {
     const state = { balance: String(balance), credit: '0' }
     const increments = []
+    const markers = new Map()
     return {
         state,
         increments,
+        markers,
         async hGet() {
             return state.balance
         },
@@ -16,6 +18,9 @@ function redis(balance = 100) {
             increments.push({ key, field, increment })
             state.balance = String(Number(state.balance) + increment)
             return Number(state.balance)
+        },
+        async set(key, value) {
+            markers.set(key, String(value))
         }
     }
 }
@@ -67,6 +72,7 @@ test('提交和发送成功事件扣 Redis 余额，并写入扣费流水', asyn
     assert.equal(await service.apply(billing()), 'applied')
     assert.equal(cache.state.balance, '90')
     assert.deepEqual(cache.increments, [{ key: 'chat-web-finance:srm:balances', field: '1', increment: -10 }])
+    assert.equal(cache.markers.get('chat-web-finance:srm:balance-dirty:1'), '1')
     assert.equal(box.deducts.length, 1)
     assert.equal(box.deducts[0].eventId, 'm1:submitted')
     assert.equal(box.deducts[0].currency, 'USD')
@@ -98,6 +104,7 @@ test('同一扣费事件只扣一次，重复事件不再访问 Redis', async ()
     const service = new SrmChargeService(box.dataSource, cache)
     assert.equal(await service.apply(billing()), 'duplicate')
     assert.equal(cache.increments.length, 0)
+    assert.equal(cache.markers.size, 0)
     assert.equal(box.deducts.length, 0)
 })
 
@@ -111,6 +118,7 @@ test('扣费流水写入失败时回补 Redis 余额', async () => {
         cache.increments.map(item => item.increment),
         [-10, 10]
     )
+    assert.equal(cache.markers.get('chat-web-finance:srm:balance-dirty:1'), '1')
 })
 
 test('无效触发节点不扣费，钱包不存在时不扣 Redis 余额', async () => {

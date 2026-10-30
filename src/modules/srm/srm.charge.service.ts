@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { RedisService } from '@wlisfes/chat-web-base-schema/redis'
 import { DataSource, InjectDataSource } from '@wlisfes/chat-web-base-schema/database'
-import { SRM_WALLET_BALANCE_KEY, srmWalletBalanceField } from '@/modules/srm/srm.charge.constants'
+import { SRM_WALLET_BALANCE_KEY, srmWalletBalanceDirtyKey, srmWalletBalanceField } from '@/modules/srm/srm.charge.constants'
 import { type SrmUserBillingPayload } from '@wlisfes/chat-web-base-schema/rabbitmq'
 import * as Schema from '@wlisfes/chat-web-base-schema'
 
@@ -43,6 +43,7 @@ export class SrmChargeService {
                     -event.amount
                 )
                 deducted = true
+                await this.markBalanceDirty(event.userKeyId)
                 try {
                     await deductRepository.insert({
                         eventId: event.eventId,
@@ -84,10 +85,16 @@ export class SrmChargeService {
         return balance
     }
 
-    /** 扣费流水写入失败时，通过 HINCRBY 反向补回已经扣掉的余额。 */
+    /** 标记该供应商余额待 Finance 回写；标记值固定，重复写入和并发回归都不会覆盖新变化。 */
+    private async markBalanceDirty(userKeyId: number): Promise<void> {
+        await this.redisService.set(srmWalletBalanceDirtyKey(userKeyId), '1')
+    }
+
+    /** 扣费流水写入失败时，通过 HINCRBY 反向补回已经扣掉的余额，并保留待同步标记。 */
     private async restoreRedisBalance(userKeyId: number, amount: number): Promise<void> {
         try {
             await this.redisService.hIncrBy(SRM_WALLET_BALANCE_KEY, srmWalletBalanceField(userKeyId), amount)
+            await this.markBalanceDirty(userKeyId)
         } catch (error) {
             this.logger.error(
                 `供应商 Redis 余额回补失败：userKeyId=${userKeyId}，amount=${amount}，原因=${error instanceof Error ? error.message : String(error)}`
