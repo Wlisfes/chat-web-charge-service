@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { RedisService } from '@wlisfes/chat-web-base-schema/redis'
 import { DataSource, InjectDataSource } from '@wlisfes/chat-web-base-schema/database'
-import { SRM_WALLET_BALANCE_FIELD, srmWalletRedisKey } from '@/modules/srm/srm.charge.constants'
+import { SRM_WALLET_BALANCE_KEY, srmWalletBalanceField } from '@/modules/srm/srm.charge.constants'
 import { type SrmUserBillingPayload } from '@wlisfes/chat-web-base-schema/rabbitmq'
 import * as Schema from '@wlisfes/chat-web-base-schema'
 
@@ -37,7 +37,7 @@ export class SrmChargeService {
                 })
                 if (!wallet) throw new Error(`供应商钱包不存在：userKeyId=${event.userKeyId}`)
                 await this.findRedisBalance(event.userKeyId)
-                const balance = await this.redisService.hIncrBy(srmWalletRedisKey(event.userKeyId), SRM_WALLET_BALANCE_FIELD, -event.amount)
+                const balance = await this.redisService.hIncrBy(SRM_WALLET_BALANCE_KEY, srmWalletBalanceField(event.userKeyId), -event.amount)
                 deducted = true
                 try {
                     await deductRepository.insert({
@@ -69,8 +69,7 @@ export class SrmChargeService {
 
     /** 读取 Redis 中的最新钱包余额；字段缺失或格式错误时拒绝继续扣费。 */
     private async findRedisBalance(userKeyId: number): Promise<number> {
-        const snapshot = await this.redisService.hGetAll(srmWalletRedisKey(userKeyId))
-        const raw = snapshot[SRM_WALLET_BALANCE_FIELD]
+        const raw = await this.redisService.hGet(SRM_WALLET_BALANCE_KEY, srmWalletBalanceField(userKeyId))
         if (typeof raw !== 'string' || !/^-?\d+$/.test(raw)) {
             throw new Error(`供应商钱包${userKeyId}的 Redis 余额缺失或格式错误`)
         }
@@ -84,7 +83,7 @@ export class SrmChargeService {
     /** 扣费流水写入失败时，通过 HINCRBY 反向补回已经扣掉的余额。 */
     private async restoreRedisBalance(userKeyId: number, amount: number): Promise<void> {
         try {
-            await this.redisService.hIncrBy(srmWalletRedisKey(userKeyId), SRM_WALLET_BALANCE_FIELD, amount)
+            await this.redisService.hIncrBy(SRM_WALLET_BALANCE_KEY, srmWalletBalanceField(userKeyId), amount)
         } catch (error) {
             this.logger.error(
                 `供应商 Redis 余额回补失败：userKeyId=${userKeyId}，amount=${amount}，原因=${error instanceof Error ? error.message : String(error)}`

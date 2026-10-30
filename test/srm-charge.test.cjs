@@ -9,13 +9,13 @@ function redis(balance = 100) {
     return {
         state,
         increments,
-        async hGetAll() {
-            return { ...state }
+        async hGet() {
+            return state.balance
         },
         async hIncrBy(key, field, increment) {
             increments.push({ key, field, increment })
-            state[field] = String(Number(state[field] ?? 0) + increment)
-            return Number(state[field])
+            state.balance = String(Number(state.balance) + increment)
+            return Number(state.balance)
         }
     }
 }
@@ -66,7 +66,7 @@ test('提交和发送成功事件扣 Redis 余额，并写入扣费流水', asyn
     const service = new SrmChargeService(box.dataSource, cache)
     assert.equal(await service.apply(billing()), 'applied')
     assert.equal(cache.state.balance, '90')
-    assert.deepEqual(cache.increments, [{ key: 'chat-web-finance:srm:wallet:1', field: 'balance', increment: -10 }])
+    assert.deepEqual(cache.increments, [{ key: 'chat-web-finance:srm:balances', field: '1', increment: -10 }])
     assert.equal(box.deducts.length, 1)
     assert.equal(box.deducts[0].eventId, 'm1:submitted')
     assert.equal(box.deducts[0].currency, 'USD')
